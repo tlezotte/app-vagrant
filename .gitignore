@@ -1,0 +1,5 @@
+.vagrant/
+data/
+
+# box builds
+**/*.box
