@@ -12,7 +12,7 @@ Vagrant.configure("2") do |config|
 
   # Every Vagrant development environment requires a box. You can search for
   # boxes at https://vagrantcloud.com/search.
-  config.vm.box = "geerlingguy/centos7"
+  config.vm.box = "centos/7"
 
   # Disable automatic box update checking. If you disable this, then
   # boxes will only be checked for updates when the user runs
@@ -39,7 +39,7 @@ Vagrant.configure("2") do |config|
   # the path on the host to the actual folder. The second argument is
   # the path on the guest to mount the folder. And the optional third
   # argument is a set of non-required options.
-  config.vm.synced_folder "data", "/vagrant"
+  config.vm.synced_folder "data", "/vagrant-data"
 
   # Provider-specific configuration so you can fine-tune various
   # backing providers for Vagrant. These expose provider-specific options.
@@ -63,6 +63,7 @@ Vagrant.configure("2") do |config|
     # Add user and group
     /usr/sbin/groupadd -g 1118 oriapp
     /usr/sbin/useradd -d /app001 -m -u 1118 -g oriapp oriapp
+    /usr/sbin/usermod -a -G vagrant oriapp
     echo "%oriapp ALL=(ALL) NOPASSWD: ALL" > /etc/sudoers.d/oriapp
 
     # https://github.com/CentOS/sig-cloud-instance-images/issues/15#issuecomment-252563831
@@ -75,7 +76,7 @@ Vagrant.configure("2") do |config|
     ln -s -f /usr/share/zoneinfo/America/Chicago /etc/localtime
 
     # Install software collections, epel and other utilities needed
-    yum -y install centos-release-scl epel-release gcc libaio-devel wget unzip tar xz git mail telnet
+    yum -y install centos-release-scl epel-release gcc libaio-devel wget unzip tar xz git mail telnet net-tools
 
     # Apparently the PHP 7.3 Software Collection is not yet included in centos-release-scl
     yum-config-manager --enable centos-sclo-rh-testing
@@ -90,8 +91,7 @@ Vagrant.configure("2") do |config|
                     rh-php73-php-mysqlnd rh-php73-php-odbc rh-php73-php-opcache rh-php73-php-pdo \
                     rh-php73-php-pear rh-php73-php-pecl-jsonc rh-php73-php-pecl-jsonc-devel \
                     rh-php73-php-pecl-memcache rh-php73-php-process rh-php73-php-soap rh-php73-php-tidy \
-                    rh-php73-php-xml rh-php73-runtime libmcrypt libmcrypt-devel ssmtp rh-php73-php-fpm \
-                    supervisor
+                    rh-php73-php-xml rh-php73-runtime libmcrypt libmcrypt-devel ssmtp rh-php73-php-fpm
 
     # Create directory structure for code
     mkdir /app001/{bin,apps,www,www-logs}
@@ -110,21 +110,21 @@ Vagrant.configure("2") do |config|
     perl -pi -e 's/^;?listen.owner\s*=.*$/listen.owner = apache/' /etc/opt/rh/rh-php73/php-fpm.d/www.conf
 
     # Install composer
-    wget -O /vagrant/composer-setup.php https://getcomposer.org/installer
-    /opt/rh/rh-php73/root/usr/bin/php /vagrant/composer-setup.php --filename=composer --install-dir=/app001/bin
-    rm -f /vagrant/composer-setup.php
+    wget -O /vagrant-data/composer-setup.php https://getcomposer.org/installer
+    /opt/rh/rh-php73/root/usr/bin/php /vagrant-data/composer-setup.php --filename=composer --install-dir=/app001/bin
+    rm -f /vagrant-data/composer-setup.php
 
     # Install node
-    wget -O /vagrant/node.tar.xz https://nodejs.org/dist/v12.18.3/node-v12.18.3-linux-x64.tar.xz
+    wget -O /vagrant-data/node.tar.xz https://nodejs.org/dist/v12.18.3/node-v12.18.3-linux-x64.tar.xz
     mkdir /app001/apps/node
-    tar xf /vagrant/node.tar.xz -C /app001/apps/node --strip-components=1
-    rm -f /vagrant/node.tar.xz
+    tar xf /vagrant-data/node.tar.xz -C /app001/apps/node --strip-components=1
+    rm -f /vagrant-data/node.tar.xz
 
     # Install gulp globally
     npm install gulp-cli -g
 
     # Update root's PATH variable to include php and node
-    echo -e "PATH=\"/app001/bin:/opt/rh/rh-php73/root/usr/bin:/opt/rh/rh-php73/root/usr/sbin:/app001/apps/node/bin:${PATH}\"" >> /etc/profile
+    echo -e "PATH=\"/app001/bin:/opt/rh/rh-php73/root/usr/bin:/opt/rh/rh-php73/root/usr/sbin:/app001/apps/node/bin:/usr/local/bin:${PATH}\"" >> /etc/profile
 
     # Clean up
     yum clean all
@@ -133,5 +133,11 @@ Vagrant.configure("2") do |config|
     # Ansible
     yum -y install python3
     pip3 install ansible molecule docker testinfra yamllint flake8
+
+    # Start services
+    systemctl enable httpd24-httpd
+    systemctl start httpd24-httpd
+    systemctl enable rh-php73-php-fpm
+    systemctl start rh-php73-php-fpm
   SHELL
 end
