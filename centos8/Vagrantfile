@@ -1,0 +1,135 @@
+# -*- mode: ruby -*-
+# vi: set ft=ruby :
+
+# All Vagrant configuration is done below. The "2" in Vagrant.configure
+# configures the configuration version (we support older styles for
+# backwards compatibility). Please don't change it unless you know what
+# you're doing.
+Vagrant.configure("2") do |config|
+  # The most common configuration options are documented and commented below.
+  # For a complete reference, please see the online documentation at
+  # https://docs.vagrantup.com.
+
+  # Every Vagrant development environment requires a box. You can search for
+  # boxes at https://vagrantcloud.com/search.
+  config.vm.box = "generic/centos8"
+
+  # Disable automatic box update checking. If you disable this, then
+  # boxes will only be checked for updates when the user runs
+  # `vagrant box outdated`. This is not recommended.
+  config.vm.box_check_update = false
+
+  # Create a forwarded port mapping which allows access to a specific port
+  # within the machine from a port on the host machine. In the example below,
+  # accessing "localhost:8080" will access port 80 on the guest machine.
+  # NOTE: This will enable public access to the opened port
+  config.vm.network "forwarded_port", guest: 80, host: 8080, host_ip: "127.0.0.1"
+  config.vm.network "forwarded_port", guest: 443, host: 8443, host_ip: "127.0.0.1"
+
+  # Create a private network, which allows host-only access to the machine
+  # using a specific IP.
+  # config.vm.network "private_network", ip: "192.168.33.10"
+
+  # Create a public network, which generally matched to bridged network.
+  # Bridged networks make the machine appear as another physical device on
+  # your network.
+  # config.vm.network "public_network"
+
+  # Share an additional folder to the guest VM. The first argument is
+  # the path on the host to the actual folder. The second argument is
+  # the path on the guest to mount the folder. And the optional third
+  # argument is a set of non-required options.
+  config.vm.synced_folder "data", "/vagrant-data"
+
+  # Provider-specific configuration so you can fine-tune various
+  # backing providers for Vagrant. These expose provider-specific options.
+  # Example for VirtualBox:
+  #
+  # config.vm.provider "virtualbox" do |vb|
+  #   # Display the VirtualBox GUI when booting the machine
+  #   vb.gui = true
+  #
+  #   # Customize the amount of memory on the VM:
+  #   vb.memory = "1024"
+  # end
+  #
+  # View the documentation for the provider you are using for more
+  # information on available options.
+
+  # Enable provisioning with a shell script. Additional provisioners such as
+  # Ansible, Chef, Docker, Puppet and Salt are also available. Please see the
+  # documentation for more information about their specific syntax and use.
+  config.vm.provision "shell", inline: <<-SHELL
+    # Add user and group
+    /usr/sbin/groupadd -g 1118 oriapp
+    /usr/sbin/useradd -d /app001 -m -u 1118 -g oriapp oriapp
+    /usr/sbin/usermod -a -G vagrant oriapp
+    echo "%oriapp ALL=(ALL) NOPASSWD: ALL" > /etc/sudoers.d/oriapp
+
+    # Minor versions (i.e. 6.7) don't receive updates, so need to do this manually
+    yum -y update
+
+    # Set timezone to central
+    ln -s -f /usr/share/zoneinfo/America/Chicago /etc/localtime
+
+    # Install software collections, epel and other utilities needed
+    yum -y install https://dl.fedoraproject.org/pub/epel/epel-release-latest-8.noarch.rpm
+    dnf config-manager --set-enabled PowerTools
+    yum -y install make wget
+
+    # Install apache 2.4 and apache modules
+    yum -y install httpd
+
+    # Install php and php modules
+    yum -y install php php-devel php-gd php-gmp php-ldap php-mbstring \
+                    php-mysqlnd php-odbc php-opcache php-pdo php-pear \
+                    php-process php-soap libmcrypt libmcrypt-devel php-json
+
+    # Create directory structure for code
+    mkdir /app001/{bin,apps,www,www-logs}
+
+    # Install xdebug
+    yes | /usr/bin/pecl install xdebug
+
+    # Install mcrypt PHP extension
+    echo "" | /usr/bin/pecl install mcrypt
+
+    # Make the php-fpm "www" pool log errors to Apache error log
+    perl -pi -e 's/^php_admin_value\[error_log\].*$/php_admin_value[error_log] = /' /etc/php-fpm.d/www.conf
+
+    # Use UNIX socket for php-fpm "www" pool
+    perl -pi -e 's/^listen\s*=.*$/listen = \/var\/run\/php-fpm\/www.sock/' /etc/php-fpm.d/www.conf
+    perl -pi -e 's/^;?listen.owner\s*=.*$/listen.owner = apache/' /etc/php-fpm.d/www.conf
+
+    # Install composer
+    wget -O /vagrant-data/composer-setup.php https://getcomposer.org/installer
+    /usr/bin/php /vagrant-data/composer-setup.php --filename=composer --install-dir=/app001/bin
+    rm -f /vagrant-data/composer-setup.php
+
+    # Install node
+    wget -O /vagrant-data/node.tar.xz https://nodejs.org/dist/v12.18.3/node-v12.18.3-linux-x64.tar.xz
+    mkdir /app001/apps/node
+    tar xf /vagrant-data/node.tar.xz -C /app001/apps/node --strip-components=1
+    rm -f /vagrant-data/node.tar.xz
+
+    # Install gulp globally
+    npm install gulp-cli -g
+
+    # Update root's PATH variable to include php and node
+    echo -e "PATH=\"/app001/bin:/usr/bin:/app001/apps/node/bin:/usr/local/bin:${PATH}\"" >> /etc/profile
+
+    # Clean up
+    yum clean all
+    chown -R oriapp:oriapp /app001
+
+    # Ansible
+    yum -y install python3
+    pip3 install ansible molecule docker testinfra yamllint flake8
+
+    # Start services
+    systemctl enable httpd
+    systemctl start httpd
+    systemctl enable php-fpm
+    systemctl start php-fpm
+  SHELL
+end
